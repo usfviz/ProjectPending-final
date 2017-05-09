@@ -54,17 +54,18 @@ ui <- fluidPage(
       tabPanel(
         "Batting Average Grid",
         fixedRow(
-          column(3,
+          column(2, align="left",
                  imageOutput("Left")
           ),
-          column(6,
+          column(4, align="left",
                  h3(style= "text-align: center;", 'Batting Average by Zone'),
                  br(), br(),
                  plotlyOutput("heatmap", height = "500px", width="500px")
           ),
-          column(3,
+          column(2, align = 'left',
                  imageOutput("Right")
-          )
+          ),
+          column(4)
         )
       )
     )

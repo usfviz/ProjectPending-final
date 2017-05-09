@@ -1,4 +1,4 @@
-dependencies <- c('shiny', 'ggplot2', 'png', 'ggvis', 'plotly', 'RCurl', 'stringr', 'tidyr')
+dependencies <- c('shiny', 'ggplot2', 'png', 'ggvis', 'plotly', 'RCurl', 'stringr', 'tidyr', 'reshape2')
 new.packages <- dependencies[!(dependencies %in% installed.packages()[,"Package"])]
 if(length(new.packages)>0) {install.packages(new.packages, repos="http://cran.rstudio.com/")}
 
@@ -10,7 +10,7 @@ library('plotly')
 library('RCurl')
 library('stringr')
 library('tidyr')
-
+library('reshape2')
 
 ##### Preprocessing Data #####
 df <- read.csv('data/dodgers.csv', stringsAsFactors = FALSE)

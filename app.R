@@ -1,3 +1,5 @@
+source("global.R")
+
 ui <- fluidPage(
   title = "Batter Statistics",
   

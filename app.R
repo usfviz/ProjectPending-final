@@ -1,141 +1,3 @@
-dependencies <- c('shiny', 'ggplot2', 'png', 'ggvis', 'plotly', 'RCurl')
-new.packages <- dependencies[!(dependencies %in% installed.packages()[,"Package"])]
-if(length(new.packages)>0) {install.packages(new.packages, repos="http://cran.rstudio.com/")}
-
-library('shiny')
-library('ggplot2')
-library('png')
-library('ggvis')
-library('plotly')
-library('RCurl')
-library('stringr')
-
-##### Preprocessing Data #####
-df <- read.csv('data/dodgers.csv', stringsAsFactors = FALSE)
-
-# Modify pitch types
-df[df$pitch.pitch_type %in% c('IN', 'EP', 'KC') | is.na(df$pitch.pitch_type), 'pitch.pitch_type'] <- 'Other'
-df[df$pitch.pitch_type %in% c('FC', 'FF', 'FS', 'FT'), 'pitch.pitch_type'] <- 'Fastball'
-df[df$pitch.pitch_type == 'CH', 'pitch.pitch_type'] <- 'Changeup'
-df[df$pitch.pitch_type == 'CU', 'pitch.pitch_type'] <- 'Curve'
-df[df$pitch.pitch_type == 'SI', 'pitch.pitch_type'] <- 'Sinker'
-df[df$pitch.pitch_type == 'SL', 'pitch.pitch_type'] <- 'Slider'
-
-df$result <- factor(df$result, ordered=TRUE,
-                    levels <- c('Single', 'Double', 'Triple', 'Home Run', 'Out'))
-
-teams <- list(`National League` = levels(factor(df[which(df$home_lg == "NL"), 'Home.Team'])),
-              `American League` = levels(factor(df[which(df$home_lg == "AL"), 'Home.Team'])))
-
-result_colors <- c('#bdd7e7','#6baed6','#3182bd','#08519c', 'black')
-names(result_colors) <- levels(df$result)
-
-
-num_bases <- function(event){
-  if (event == "Single") {
-    return(1)
-  } else if (event == "Double") {
-    return(2)
-  } else if (event == "Triple") {
-    return(3)
-  } else if (event == "Home Run") {
-    return(4)
-  } else {
-    return(0)
-  }
-}
-
-df['numBases'] <- sapply(df$event, num_bases)
-df['month'] <- sapply(strsplit(df$gameId, split='_'), function(x) {strtoi(x[3], base=10)})
-
-df_lad <- df[df$field_teamId != 119,]
-
-calc_slg <- function(n_base, isAB){
-  return (sum(n_base) / sum(isAB))
-}
-calc_ba <- function(isHit, isAB){
-  return (sum(isHit) / sum(isAB))
-}
-calc_obp <- function(isHit, isAB, event){
-  nom = sum(isHit) + sum(event == 'Walk') + sum(event == 'Intent Walk') + sum(event =='Hit By Pitch')
-  denom = sum(isAB) + sum(event == 'Walk') + sum(event == 'Intent Walk') +
-    sum(event =='Hit By Pitch') + sum(event =='Sac Fly')
-  return (nom/denom)
-}
-
-lad_stat<-df_lad %>%
-  group_by(batterId, batterName) %>% 
-  summarise(
-    totPA=sum(isPA),
-    totAB=sum(isAB),
-    totHit=sum(isHit),
-    BA=calc_ba(isHit, isAB),
-    OBP=calc_obp(isHit, isAB, event),
-    SLG=calc_slg(numBases, isAB),
-    TB=sum(numBases)
-  )
-lad_stat <- lad_stat[order(-lad_stat$totPA),]
-batters <- lad_stat[lad_stat$totPA > 10,]$batterName
-
-lad_monthly_stat <- df_lad %>%
-  group_by(batterId, batterName, month) %>% 
-  summarise(
-    totPA=sum(isPA),
-    totAB=sum(isAB),
-    totHit=sum(isHit),
-    BA=calc_ba(isHit, isAB),
-    OBP=calc_obp(isHit, isAB, event),
-    SLG=calc_slg(numBases, isAB),
-    TB=sum(numBases)
-  )
-
-# Adding NA rows for missing months.
-for (m in c(4,5,6,7,8,9,10)){
-  for (batter in batters) {
-    df_player <- lad_monthly_stat[lad_monthly_stat$batterName == batter,]
-    if (!(m %in% df_player$month)){
-      newrow <- data.frame(
-        batterId = df_player$batterId[1], batterName = df_player$batterName[1], 
-        month = m, totPA=NA, totAB=NA, totHit=NA, BA=NA, OBP=NA, SLG=NA, TB=NA)
-      lad_monthly_stat <- rbind(data.frame(lad_monthly_stat), newrow)
-    }
-  }
-}
-
-lad_monthly_stat <- lad_monthly_stat[order(lad_monthly_stat$batterName, lad_monthly_stat$month),]
-
-
-lad_overall_monthly_stat <- df_lad %>%
-  group_by(month) %>% 
-  summarise(
-    totPA=sum(isPA),
-    totAB=sum(isAB),
-    totHit=sum(isHit),
-    BA=calc_ba(isHit, isAB),
-    OBP=calc_obp(isHit, isAB, event),
-    SLG=calc_slg(numBases, isAB),
-    TB=sum(numBases)
-  )
-
-lad_overall_monthly_stat['batterId'] = NA
-lad_overall_monthly_stat['batterName'] = 'Average'
-
-
-lad_pitchtype_stat <- df_lad %>%
-  group_by(batterId, batterName, pitch.pitch_type) %>% 
-  summarise(
-    totPA=sum(isPA),
-    totAB=sum(isAB),
-    totHit=sum(isHit),
-    BA=calc_ba(isHit, isAB),
-    OBP=calc_obp(isHit, isAB, event),
-    SLG=calc_slg(numBases, isAB),
-    TB=sum(numBases)
-  )
-
-
-#####
-
 ui <- fluidPage(
   title = "Batter Statistics",
   
@@ -144,10 +6,10 @@ ui <- fluidPage(
     column(
       4,
       selectInput(
-       inputId = "player",
-       label = "Player",
-       choices = batters[order(batters)],
-       selected = "Gonzalez, A"
+        inputId = "player",
+        label = "Player",
+        choices = batters[order(batters)],
+        selected = "Gonzalez, A"
       )
     )
   ),
@@ -186,11 +48,26 @@ ui <- fluidPage(
       tabPanel(
         "Parellel Coordinate Plot",
         plotlyOutput("pcplot")
+      ),
+      tabPanel(
+        "Batting Average Grid",
+        fixedRow(
+          column(3,
+                 imageOutput("Left")
+          ),
+          column(6,
+                 h3(style= "text-align: center;", 'Batting Average by Zone'),
+                 br(), br(),
+                 plotlyOutput("heatmap", height = "500px", width="500px")
+          ),
+          column(3,
+                 imageOutput("Right")
+          )
+        )
       )
     )
   )
 )
-
 
 server <- function(session, input, output) {
   # Update Input Labels
@@ -306,8 +183,8 @@ server <- function(session, input, output) {
       ylim(c(-100, 500)) +
       guides(des=FALSE) +
       theme(
-        axis.line=element_blank(),axis.text.x=element_blank(),
-        axis.text.y=element_blank(),axis.ticks=element_blank(),
+        axis.line=element_blank(), axis.text.x=element_blank(),
+        axis.text.y=element_blank(), axis.ticks=element_blank(),
         axis.title.x=element_blank(),
         axis.title.y=element_blank(),
         panel.grid.major = element_blank(),
@@ -368,7 +245,78 @@ server <- function(session, input, output) {
     plotly_p
   })
   
+  heat_df <- reactive({
+    df <- df[which(df$batterName == input$player & df$isAB), c('batterName', 'Zone.X', 'Zone.Y', 'isHit', 'isAB')]
+    df <- dcast(df[,c('batterName', 'Zone.X', 'Zone.Y', 'isHit', 'isAB')],
+                batterName + Zone.X + Zone.Y ~ isHit + isAB, sum, value.var='isAB')
+    df$Hits <- df$TRUE_TRUE
+    df$AB <- df$FALSE_TRUE + df$TRUE_TRUE
+    df$BA <- df$Hits/df$AB
+    df <- df[which(!is.na(df$BA)),c('batterName', 'Zone.X', 'Zone.Y', 'Hits', 'AB', 'BA')]
+    df
+  })
+  
+  # HeatMap (ggplot)
+  heatmap <- function(df){
+    ggplot(df) + 
+      geom_tile(aes(x=Zone.X - .5, y=Zone.Y - .5, fill = BA,
+                    text = paste0(Hits, " H/", AB, " AB"))) +
+      geom_segment(aes(x=1, xend=4, y=4, yend=4), colour='black') +
+      geom_segment(aes(x=1, xend=4, y=3, yend=3), colour='black') +
+      geom_segment(aes(x=1, xend=4, y=2, yend=2), colour='black') +
+      geom_segment(aes(x=1, xend=4, y=1, yend=1), colour='black') +
+      geom_segment(aes(x=1, xend=1, y=1, yend=4), colour='black') +
+      geom_segment(aes(x=2, xend=2, y=1, yend=4), colour='black') +
+      geom_segment(aes(x=3, xend=3, y=1, yend=4), colour='black') +
+      geom_segment(aes(x=4, xend=4, y=1, yend=4), colour='black') +
+      geom_text(aes(x = Zone.X - .5, y=Zone.Y -.5,
+                    group = 1,
+                    label = sub("^(-?)0.", "\\1.", sprintf("%.3f", BA)))) +
+      xlim(c(0, 5)) +
+      ylim(c(0, 5)) +
+      scale_fill_gradient2(low='#2166ac', mid='#f7f7f7', midpoint=.275, high='#b2182b') +
+      theme(
+        axis.line=element_blank(),axis.text.x=element_blank(),
+        axis.text.y=element_blank(),axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = 'none'
+      )
+  }
+  
+  # Spray Chart (Plotly)
+  output$heatmap <- renderPlotly({
+    p <- heatmap(heat_df())
+    p <- ggplotly(p, tooltip=c('text'), autosize = FALSE, width = 400, height = 400)
+    p
+  })
+  
+  stance <- reactive({ df[which(df$batterName == input$player)[1], "stand"] })
+  
+  # Left-handed batter
+  output$Left <- renderImage({
+    if (stance() == 'L'){
+      filename <- normalizePath(file.path('./data/batting/L.png'))
+    } else {
+      filename <- normalizePath(file.path('./data/batting/Blank.png'))
+    }
+    list(src = filename,
+         width = 175)
+  }, deleteFile = FALSE)
+  
+  # Right-handed batter
+  output$Right <- renderImage({
+    if (stance() == 'R'){
+      filename <- normalizePath(file.path('./data/batting/R.png'))
+    } else {
+      filename <- normalizePath(file.path('./data/batting/Blank.png'))
+    }
+    list(src = filename,
+         width = 175)
+  }, deleteFile = FALSE)
+  
 }
-
 
 shinyApp(ui = ui, server = server)
